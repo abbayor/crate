@@ -132,9 +132,8 @@
     background: var(--card);
     border-radius: 12px;
     padding: 14px;
-    display: flex;
-    gap: 12px;
   }
+  .bookmark-card-top { display: flex; gap: 12px; }
   .bookmark-card img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: #0f1115; }
   .bookmark-card .info { flex: 1; min-width: 0; }
   .bookmark-card .title { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
@@ -149,7 +148,7 @@
     margin-bottom: 4px;
   }
   .bookmark-card .platform-tag { font-size: 11px; color: var(--muted); }
-  .bookmark-card .actions { display: flex; gap: 6px; margin-top: 8px; }
+  .bookmark-card .actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
   .bookmark-card .actions a, .bookmark-card .actions button {
     font-size: 12px;
     padding: 6px 10px;
@@ -161,8 +160,101 @@
     cursor: pointer;
   }
   .bookmark-card .actions .go-original { color: var(--accent); border-color: var(--accent); }
+  .bookmark-card .actions .play-btn { color: var(--success); border-color: var(--success); }
 
   .empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
+
+  /* --- Inline player: embedded right inside the card, roughly a third of
+     the viewport height, since TikTok/Shorts/Reels are vertical (9:16) --- */
+  .inline-player {
+    display: none;
+    margin-top: 12px;
+    width: 100%;
+    max-width: 220px;
+    aspect-ratio: 9 / 16;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+  }
+  .inline-player.show { display: block; }
+  .inline-player iframe { width: 100%; height: 100%; border: none; }
+
+  /* --- Mini (draggable floating) player --- */
+  #miniPlayer {
+    display: none;
+    position: fixed;
+    width: 150px;
+    aspect-ratio: 9 / 16;
+    right: 16px;
+    bottom: 90px;
+    z-index: 200;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    border: 1px solid var(--border);
+    touch-action: none;
+    display: flex;
+    flex-direction: column;
+  }
+  #miniPlayer.show { display: flex; }
+  #miniPlayer .mp-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 6px;
+    background: #171a21;
+    cursor: grab;
+    flex-shrink: 0;
+  }
+  #miniPlayer .mp-head:active { cursor: grabbing; }
+  #miniPlayer .mp-head button {
+    width: 20px; height: 20px;
+    border-radius: 5px;
+    border: none;
+    background: #23252e;
+    color: var(--text);
+    font-size: 11px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #miniPlayer .mp-btns { display: flex; gap: 4px; }
+  #miniPlayer .mp-body { flex: 1; min-height: 0; }
+  #miniPlayer .mp-body iframe { width: 100%; height: 100%; border: none; }
+
+  /* --- Fullscreen player --- */
+  #fullscreenPlayer {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.95);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    padding: 20px;
+  }
+  #fullscreenPlayer.show { display: flex; }
+  #fullscreenPlayer .fs-body {
+    width: 100%;
+    max-width: 400px;
+    aspect-ratio: 9 / 16;
+    max-height: 78vh;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  #fullscreenPlayer .fs-body iframe { width: 100%; height: 100%; border: none; }
+  #fullscreenPlayer .fs-controls { display: flex; gap: 10px; margin-top: 16px; }
+  #fullscreenPlayer button {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+  }
 </style>
 </head>
 <body>
@@ -212,6 +304,27 @@
   <div class="tab-panel" id="tab-library">
     <div class="genre-scroll" id="genreScroll"></div>
     <div class="bookmark-list" id="bookmarkList"></div>
+  </div>
+</div>
+
+<!-- Draggable mini player -->
+<div id="miniPlayer">
+  <div class="mp-head" id="mpHead">
+    <span style="font-size:10px;color:#9a9ba5;">⠿ drag</span>
+    <div class="mp-btns">
+      <button id="mpFullscreen" title="Fullscreen">⤢</button>
+      <button id="mpClose" title="Close">✕</button>
+    </div>
+  </div>
+  <div class="mp-body" id="mpBody"></div>
+</div>
+
+<!-- Fullscreen player -->
+<div id="fullscreenPlayer">
+  <div class="fs-body" id="fsBody"></div>
+  <div class="fs-controls">
+    <button id="fsMinimize">Shrink to mini player</button>
+    <button id="fsClose">Close</button>
   </div>
 </div>
 
@@ -302,6 +415,7 @@ confirmSaveBtn.addEventListener('click', async () => {
         notes: pvNotes.value.trim(),
         thumbnail: currentPreview.thumbnail,
         uploader: currentPreview.uploader,
+        video_id: currentPreview.video_id,
       })
     });
     const data = await res.json();
@@ -354,16 +468,20 @@ async function loadBookmarks(genre) {
 
   bookmarkList.innerHTML = items.map(b => `
     <div class="bookmark-card" data-id="${b.id}">
-      <img src="${b.thumbnail || ''}" alt="">
-      <div class="info">
-        <div class="genre-badge">${b.genre}</div>
-        <div class="title">${escapeHtml(b.title)}</div>
-        <div class="platform-tag">${b.platform}${b.uploader ? ' · ' + escapeHtml(b.uploader) : ''}</div>
-        <div class="actions">
-          <a class="go-original" href="${b.url}" target="_blank" rel="noopener">Go to original</a>
-          <button class="delete-btn" data-id="${b.id}">Delete</button>
+      <div class="bookmark-card-top">
+        <img src="${b.thumbnail || ''}" alt="">
+        <div class="info">
+          <div class="genre-badge">${b.genre}</div>
+          <div class="title">${escapeHtml(b.title)}</div>
+          <div class="platform-tag">${b.platform}${b.uploader ? ' · ' + escapeHtml(b.uploader) : ''}</div>
+          <div class="actions">
+            ${b.embed_url ? `<button class="play-btn" data-embed="${b.embed_url}" data-cardid="${b.id}">▶ Play</button>` : ''}
+            <a class="go-original" href="${b.url}" target="_blank" rel="noopener">Go to original</a>
+            <button class="delete-btn" data-id="${b.id}">Delete</button>
+          </div>
         </div>
       </div>
+      <div class="inline-player" id="inline-${b.id}"></div>
     </div>
   `).join('');
 
@@ -371,6 +489,12 @@ async function loadBookmarks(genre) {
     btn.addEventListener('click', async () => {
       await fetch('/api/bookmarks/' + btn.dataset.id, { method: 'DELETE' });
       loadBookmarks(currentGenreFilter);
+    });
+  });
+
+  bookmarkList.querySelectorAll('.play-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      playInline(btn.dataset.cardid, btn.dataset.embed);
     });
   });
 }
@@ -381,7 +505,141 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// ============================================================
+// Player: three states — inline (in the card), mini (draggable
+// floating), fullscreen. Only one video plays at a time; switching
+// states moves the same iframe src rather than creating new players.
+// ============================================================
+
+let activeEmbedUrl = null;
+let activeCardId = null;
+let currentState = null; // 'inline' | 'mini' | 'fullscreen'
+
+const miniPlayer = document.getElementById('miniPlayer');
+const mpBody = document.getElementById('mpBody');
+const fullscreenPlayer = document.getElementById('fullscreenPlayer');
+const fsBody = document.getElementById('fsBody');
+
+function stopAllPlayers() {
+  mpBody.innerHTML = '';
+  fsBody.innerHTML = '';
+  document.querySelectorAll('.inline-player').forEach(el => { el.innerHTML = ''; el.classList.remove('show'); });
+  miniPlayer.classList.remove('show');
+  fullscreenPlayer.classList.remove('show');
+}
+
+function makeIframe(embedUrl) {
+  const iframe = document.createElement('iframe');
+  iframe.src = embedUrl;
+  iframe.allow = 'autoplay; encrypted-media; picture-in-picture';
+  iframe.allowFullscreen = true;
+  return iframe;
+}
+
+function playInline(cardId, embedUrl) {
+  stopAllPlayers();
+  activeEmbedUrl = embedUrl;
+  activeCardId = cardId;
+  currentState = 'inline';
+
+  const slot = document.getElementById('inline-' + cardId);
+  slot.innerHTML = '';
+  slot.appendChild(makeIframe(embedUrl));
+  slot.classList.add('show');
+
+  // Small control row under the inline player to jump to mini/fullscreen
+  const controls = document.createElement('div');
+  controls.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
+  controls.innerHTML = `
+    <button class="to-mini" style="font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid #2a2d38;background:#0f1115;color:#9a9ba5;cursor:pointer;">Shrink to mini</button>
+    <button class="to-fullscreen" style="font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid #2a2d38;background:#0f1115;color:#9a9ba5;cursor:pointer;">Fullscreen</button>
+  `;
+  slot.parentElement.appendChild(controls);
+  controls.querySelector('.to-mini').addEventListener('click', goMini);
+  controls.querySelector('.to-fullscreen').addEventListener('click', goFullscreen);
+  slot.parentElement._controlsEl = controls;
+}
+
+function clearInlineFor(cardId) {
+  if (!cardId) return;
+  const slot = document.getElementById('inline-' + cardId);
+  if (!slot) return;
+  slot.innerHTML = '';
+  slot.classList.remove('show');
+  if (slot.parentElement._controlsEl) {
+    slot.parentElement._controlsEl.remove();
+    slot.parentElement._controlsEl = null;
+  }
+}
+
+function goMini() {
+  if (!activeEmbedUrl) return;
+  clearInlineFor(activeCardId);
+  fsBody.innerHTML = '';
+  fullscreenPlayer.classList.remove('show');
+
+  mpBody.innerHTML = '';
+  mpBody.appendChild(makeIframe(activeEmbedUrl));
+  miniPlayer.classList.add('show');
+  currentState = 'mini';
+}
+
+function goFullscreen() {
+  if (!activeEmbedUrl) return;
+  clearInlineFor(activeCardId);
+  mpBody.innerHTML = '';
+  miniPlayer.classList.remove('show');
+
+  fsBody.innerHTML = '';
+  fsBody.appendChild(makeIframe(activeEmbedUrl));
+  fullscreenPlayer.classList.add('show');
+  currentState = 'fullscreen';
+}
+
+document.getElementById('mpFullscreen').addEventListener('click', goFullscreen);
+document.getElementById('mpClose').addEventListener('click', () => {
+  stopAllPlayers();
+  activeEmbedUrl = null;
+  currentState = null;
+});
+document.getElementById('fsClose').addEventListener('click', () => {
+  stopAllPlayers();
+  activeEmbedUrl = null;
+  currentState = null;
+});
+document.getElementById('fsMinimize').addEventListener('click', goMini);
+
+// --- Dragging for the mini player (mouse + touch via Pointer Events) ---
+const mpHead = document.getElementById('mpHead');
+let dragging = false, dragOffsetX = 0, dragOffsetY = 0;
+
+mpHead.addEventListener('pointerdown', (e) => {
+  dragging = true;
+  const rect = miniPlayer.getBoundingClientRect();
+  dragOffsetX = e.clientX - rect.left;
+  dragOffsetY = e.clientY - rect.top;
+  mpHead.setPointerCapture(e.pointerId);
+});
+
+mpHead.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  let x = e.clientX - dragOffsetX;
+  let y = e.clientY - dragOffsetY;
+  const maxX = window.innerWidth - miniPlayer.offsetWidth;
+  const maxY = window.innerHeight - miniPlayer.offsetHeight;
+  x = Math.max(0, Math.min(x, maxX));
+  y = Math.max(0, Math.min(y, maxY));
+  miniPlayer.style.left = x + 'px';
+  miniPlayer.style.top = y + 'px';
+  miniPlayer.style.right = 'auto';
+  miniPlayer.style.bottom = 'auto';
+});
+
+mpHead.addEventListener('pointerup', () => { dragging = false; });
+mpHead.addEventListener('pointercancel', () => { dragging = false; });
+
 renderGenrePills();
 </script>
 </body>
 </html>
+
