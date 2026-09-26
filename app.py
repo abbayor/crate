@@ -73,9 +73,17 @@ def init_db():
             uploader TEXT,
             genre TEXT,
             notes TEXT,
+            video_id TEXT,
+            embed_url TEXT,
             created_at TEXT
         )
     """)
+    # Add columns if upgrading an older db that predates embed support.
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(bookmarks)")}
+    if "video_id" not in existing_cols:
+        conn.execute("ALTER TABLE bookmarks ADD COLUMN video_id TEXT")
+    if "embed_url" not in existing_cols:
+        conn.execute("ALTER TABLE bookmarks ADD COLUMN embed_url TEXT")
     conn.commit()
     conn.close()
 
@@ -92,6 +100,21 @@ def _detect_platform(url: str) -> str:
     if "youtube" in host or "youtu.be" in host:
         return "YouTube"
     return host or "Unknown"
+
+
+def _build_embed_url(platform: str, video_id: str) -> str | None:
+    """Official, platform-hosted embed URLs only — playback happens on the
+    platform's own servers via their own permitted embed player. We never
+    fetch or serve the underlying audio/video ourselves."""
+    if not video_id:
+        return None
+    if platform == "TikTok":
+        return f"https://www.tiktok.com/embed/v2/{video_id}"
+    if platform == "YouTube":
+        return f"https://www.youtube.com/embed/{video_id}"
+    # Instagram's oEmbed now requires an authenticated app token to use,
+    # so it's left out for now — those cards fall back to "Go to original".
+    return None
 
 
 def _suggest_genre(text: str) -> str:
@@ -133,15 +156,20 @@ def preview():
     description = info.get("description") or ""
     thumbnail = info.get("thumbnail") or ""
     uploader = info.get("uploader") or info.get("channel") or ""
+    video_id = info.get("id") or ""
     suggested_genre = _suggest_genre(title + " " + description)
+    platform = _detect_platform(url)
+    embed_url = _build_embed_url(platform, video_id)
 
     return jsonify({
         "title": title,
         "thumbnail": thumbnail,
         "uploader": uploader,
-        "platform": _detect_platform(url),
+        "platform": platform,
         "suggested_genre": suggested_genre,
         "original_url": url,
+        "video_id": video_id,
+        "embed_url": embed_url,
     })
 
 
@@ -169,6 +197,7 @@ def save_bookmark():
     thumbnail = (data or {}).get("thumbnail", "").strip()
     uploader = (data or {}).get("uploader", "").strip()
     original_title = (data or {}).get("original_title", "").strip()
+    video_id = (data or {}).get("video_id", "").strip()
 
     if not url:
         return jsonify({"error": "Missing URL."}), 400
@@ -177,15 +206,18 @@ def save_bookmark():
     if genre not in GENRE_LIST:
         genre = "Uncategorized"
 
+    platform = _detect_platform(url)
+    embed_url = _build_embed_url(platform, video_id)
+
     bookmark_id = uuid.uuid4().hex[:12]
     db = get_db()
     db.execute(
         """INSERT INTO bookmarks
-           (id, url, platform, title, original_title, thumbnail, uploader, genre, notes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           (id, url, platform, title, original_title, thumbnail, uploader, genre, notes, video_id, embed_url, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            bookmark_id, url, _detect_platform(url), title, original_title,
-            thumbnail, uploader, genre, notes,
+            bookmark_id, url, platform, title, original_title,
+            thumbnail, uploader, genre, notes, video_id, embed_url,
             datetime.now(timezone.utc).isoformat(),
         ),
     )
@@ -233,3 +265,4 @@ def get_genres():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
