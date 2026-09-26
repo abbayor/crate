@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crate — Save & Organize Videos You Love</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --accent: #6c5ce7;
+    --accent-hover: #7d6bf0;
+    --text: #f0f0f5;
+    --muted: #9a9ba5;
+    --error: #ff6b6b;
+    --success: #51cf66;
+    --border: #2a2d38;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 20px; }
+
+  h1 { font-size: 24px; margin: 10px 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 4px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-right: 16px;
+  }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  }
+
+  input[type="text"], select, textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #0f1115;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    font-family: inherit;
+  }
+  input[type="text"]:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 14px 0 6px; }
+  label:first-child { margin-top: 0; }
+
+  button.primary {
+    width: 100%;
+    margin-top: 18px;
+    padding: 13px;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  #saveStatus { margin-top: 14px; font-size: 13px; min-height: 18px; }
+  #saveStatus.error { color: var(--error); }
+  #saveStatus.success { color: var(--success); }
+
+  .preview-box {
+    display: none;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+  }
+  .preview-box.show { display: block; }
+  .preview-head { display: flex; gap: 12px; margin-bottom: 4px; }
+  .preview-head img { width: 90px; height: 90px; object-fit: cover; border-radius: 8px; background: #0f1115; }
+  .preview-head .meta { flex: 1; min-width: 0; }
+  .preview-head .meta .platform { font-size: 11px; color: var(--accent); font-weight: 700; text-transform: uppercase; }
+  .preview-head .meta .orig-title { font-size: 12px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+  /* Genre filter pills in Library tab */
+  .genre-scroll {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+    margin-bottom: 16px;
+  }
+  .genre-pill {
+    flex-shrink: 0;
+    padding: 8px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .genre-pill.active { border-color: var(--accent); color: var(--text); background: rgba(108,92,231,0.15); }
+
+  .bookmark-list { display: flex; flex-direction: column; gap: 12px; }
+  .bookmark-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    gap: 12px;
+  }
+  .bookmark-card img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: #0f1115; }
+  .bookmark-card .info { flex: 1; min-width: 0; }
+  .bookmark-card .title { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+  .bookmark-card .genre-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(108,92,231,0.15);
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-bottom: 4px;
+  }
+  .bookmark-card .platform-tag { font-size: 11px; color: var(--muted); }
+  .bookmark-card .actions { display: flex; gap: 6px; margin-top: 8px; }
+  .bookmark-card .actions a, .bookmark-card .actions button {
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #0f1115;
+    color: var(--text);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .bookmark-card .actions .go-original { color: var(--accent); border-color: var(--accent); }
+
+  .empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎧 Crate</h1>
+  <p class="sub">Save the videos and sounds you love — organized, findable, never lost in your bookmarks again.</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="save">Save</button>
+    <button class="tab-btn" data-tab="library">Library</button>
+  </div>
+
+  <div class="tab-panel active" id="tab-save">
+    <div class="card">
+      <label>Paste a video link</label>
+      <input type="text" id="urlInput" placeholder="https://www.tiktok.com/@user/video/...">
+      <button class="primary" id="fetchBtn">Fetch details</button>
+      <div id="saveStatus"></div>
+
+      <div class="preview-box" id="previewBox">
+        <div class="preview-head">
+          <img id="pvThumb" src="" alt="">
+          <div class="meta">
+            <div class="platform" id="pvPlatform"></div>
+            <div class="orig-title" id="pvOrigTitle"></div>
+          </div>
+        </div>
+
+        <label>Give it your own title</label>
+        <input type="text" id="pvTitle" placeholder="e.g. That Tungba drum cover">
+
+        <label>Genre</label>
+        <select id="pvGenre">
+          {% for g in genres %}
+          <option value="{{ g }}">{{ g }}</option>
+          {% endfor %}
+        </select>
+
+        <label>Notes (optional)</label>
+        <textarea id="pvNotes" rows="2" placeholder="Why you saved it, a timestamp, whatever's useful"></textarea>
+
+        <button class="primary" id="confirmSaveBtn">Save to Library</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-library">
+    <div class="genre-scroll" id="genreScroll"></div>
+    <div class="bookmark-list" id="bookmarkList"></div>
+  </div>
+</div>
+
+<script>
+const GENRES = {{ genres | tojson }};
+
+// --- Tabs ---
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'library') loadBookmarks(currentGenreFilter);
+  });
+});
+
+// --- Save tab ---
+const urlInput = document.getElementById('urlInput');
+const fetchBtn = document.getElementById('fetchBtn');
+const saveStatus = document.getElementById('saveStatus');
+const previewBox = document.getElementById('previewBox');
+const pvThumb = document.getElementById('pvThumb');
+const pvPlatform = document.getElementById('pvPlatform');
+const pvOrigTitle = document.getElementById('pvOrigTitle');
+const pvTitle = document.getElementById('pvTitle');
+const pvGenre = document.getElementById('pvGenre');
+const pvNotes = document.getElementById('pvNotes');
+const confirmSaveBtn = document.getElementById('confirmSaveBtn');
+
+let currentPreview = null;
+
+fetchBtn.addEventListener('click', async () => {
+  const url = urlInput.value.trim();
+  if (!url) {
+    saveStatus.className = 'error';
+    saveStatus.textContent = 'Paste a link first.';
+    return;
+  }
+  fetchBtn.disabled = true;
+  saveStatus.className = '';
+  saveStatus.textContent = 'Fetching details...';
+  previewBox.classList.remove('show');
+
+  try {
+    const res = await fetch('/api/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      saveStatus.className = 'error';
+      saveStatus.textContent = data.error || 'Could not fetch this link.';
+      fetchBtn.disabled = false;
+      return;
+    }
+
+    currentPreview = data;
+    pvThumb.src = data.thumbnail || '';
+    pvPlatform.textContent = data.platform;
+    pvOrigTitle.textContent = data.title;
+    pvTitle.value = data.title;
+    pvGenre.value = data.suggested_genre;
+    pvNotes.value = '';
+    previewBox.classList.add('show');
+    saveStatus.textContent = '';
+  } catch (e) {
+    saveStatus.className = 'error';
+    saveStatus.textContent = 'Network error, try again.';
+  }
+  fetchBtn.disabled = false;
+});
+
+confirmSaveBtn.addEventListener('click', async () => {
+  if (!currentPreview) return;
+  confirmSaveBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/bookmarks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: currentPreview.original_url,
+        title: pvTitle.value.trim(),
+        original_title: currentPreview.title,
+        genre: pvGenre.value,
+        notes: pvNotes.value.trim(),
+        thumbnail: currentPreview.thumbnail,
+        uploader: currentPreview.uploader,
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      saveStatus.className = 'error';
+      saveStatus.textContent = data.error || 'Could not save.';
+      confirmSaveBtn.disabled = false;
+      return;
+    }
+    saveStatus.className = 'success';
+    saveStatus.textContent = 'Saved to your library!';
+    previewBox.classList.remove('show');
+    urlInput.value = '';
+    currentPreview = null;
+  } catch (e) {
+    saveStatus.className = 'error';
+    saveStatus.textContent = 'Network error, try again.';
+  }
+  confirmSaveBtn.disabled = false;
+});
+
+// --- Library tab ---
+let currentGenreFilter = 'All';
+const genreScroll = document.getElementById('genreScroll');
+const bookmarkList = document.getElementById('bookmarkList');
+
+function renderGenrePills() {
+  const all = ['All', ...GENRES];
+  genreScroll.innerHTML = all.map(g =>
+    `<div class="genre-pill ${g === currentGenreFilter ? 'active' : ''}" data-genre="${g}">${g}</div>`
+  ).join('');
+  genreScroll.querySelectorAll('.genre-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      currentGenreFilter = pill.dataset.genre;
+      renderGenrePills();
+      loadBookmarks(currentGenreFilter);
+    });
+  });
+}
+
+async function loadBookmarks(genre) {
+  const q = genre && genre !== 'All' ? `?genre=${encodeURIComponent(genre)}` : '';
+  const res = await fetch('/api/bookmarks' + q);
+  const items = await res.json();
+
+  if (!items.length) {
+    bookmarkList.innerHTML = '<div class="empty-state">Nothing saved here yet.</div>';
+    return;
+  }
+
+  bookmarkList.innerHTML = items.map(b => `
+    <div class="bookmark-card" data-id="${b.id}">
+      <img src="${b.thumbnail || ''}" alt="">
+      <div class="info">
+        <div class="genre-badge">${b.genre}</div>
+        <div class="title">${escapeHtml(b.title)}</div>
+        <div class="platform-tag">${b.platform}${b.uploader ? ' · ' + escapeHtml(b.uploader) : ''}</div>
+        <div class="actions">
+          <a class="go-original" href="${b.url}" target="_blank" rel="noopener">Go to original</a>
+          <button class="delete-btn" data-id="${b.id}">Delete</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  bookmarkList.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await fetch('/api/bookmarks/' + btn.dataset.id, { method: 'DELETE' });
+      loadBookmarks(currentGenreFilter);
+    });
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+renderGenrePills();
+</script>
+</body>
+</html>
