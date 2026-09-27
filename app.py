@@ -75,6 +75,7 @@ def init_db():
             notes TEXT,
             video_id TEXT,
             embed_url TEXT,
+            duration REAL,
             created_at TEXT
         )
     """)
@@ -84,6 +85,8 @@ def init_db():
         conn.execute("ALTER TABLE bookmarks ADD COLUMN video_id TEXT")
     if "embed_url" not in existing_cols:
         conn.execute("ALTER TABLE bookmarks ADD COLUMN embed_url TEXT")
+    if "duration" not in existing_cols:
+        conn.execute("ALTER TABLE bookmarks ADD COLUMN duration REAL")
     conn.commit()
     conn.close()
 
@@ -157,6 +160,8 @@ def preview():
     thumbnail = info.get("thumbnail") or ""
     uploader = info.get("uploader") or info.get("channel") or ""
     video_id = info.get("id") or ""
+    duration = info.get("duration")  # seconds, used as an autoplay-timer
+    # fallback for platforms with no native "video ended" event (TikTok)
     suggested_genre = _suggest_genre(title + " " + description)
     platform = _detect_platform(url)
     embed_url = _build_embed_url(platform, video_id)
@@ -170,6 +175,7 @@ def preview():
         "original_url": url,
         "video_id": video_id,
         "embed_url": embed_url,
+        "duration": duration,
     })
 
 
@@ -198,12 +204,13 @@ def save_bookmark():
     uploader = (data or {}).get("uploader", "").strip()
     original_title = (data or {}).get("original_title", "").strip()
     video_id = (data or {}).get("video_id", "").strip()
+    duration = (data or {}).get("duration")
 
     if not url:
         return jsonify({"error": "Missing URL."}), 400
     if not title:
         title = original_title or "Untitled"
-    if genre not in GENRE_LIST:
+    if not genre:
         genre = "Uncategorized"
 
     platform = _detect_platform(url)
@@ -213,11 +220,11 @@ def save_bookmark():
     db = get_db()
     db.execute(
         """INSERT INTO bookmarks
-           (id, url, platform, title, original_title, thumbnail, uploader, genre, notes, video_id, embed_url, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           (id, url, platform, title, original_title, thumbnail, uploader, genre, notes, video_id, embed_url, duration, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             bookmark_id, url, platform, title, original_title,
-            thumbnail, uploader, genre, notes, video_id, embed_url,
+            thumbnail, uploader, genre, notes, video_id, embed_url, duration,
             datetime.now(timezone.utc).isoformat(),
         ),
     )
@@ -235,11 +242,8 @@ def update_bookmark(bookmark_id):
         return jsonify({"error": "Not found"}), 404
 
     title = (data or {}).get("title", row["title"])
-    genre = (data or {}).get("genre", row["genre"])
+    genre = (data or {}).get("genre", row["genre"]).strip() or row["genre"]
     notes = (data or {}).get("notes", row["notes"])
-
-    if genre not in GENRE_LIST:
-        genre = row["genre"]
 
     db.execute(
         "UPDATE bookmarks SET title = ?, genre = ?, notes = ? WHERE id = ?",
@@ -259,7 +263,14 @@ def delete_bookmark(bookmark_id):
 
 @app.route("/api/genres", methods=["GET"])
 def get_genres():
-    return jsonify(GENRE_LIST)
+    # Presets plus any custom genres the user has actually saved into —
+    # so a typed-in genre shows up as a real filter/pill afterward, not
+    # just accepted once and forgotten.
+    db = get_db()
+    used = {row[0] for row in db.execute("SELECT DISTINCT genre FROM bookmarks") if row[0]}
+    preset = [g for g in GENRE_LIST if g != "Uncategorized"]
+    custom = sorted(g for g in used if g not in GENRE_LIST)
+    return jsonify(preset + custom + ["Uncategorized"])
 
 
 if __name__ == "__main__":
