@@ -106,6 +106,41 @@
   .preview-head .meta .orig-title { font-size: 12px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
   /* Genre filter pills in Library tab */
+  /* Play All / Shuffle / Autoplay / Subtitles controls */
+  .queue-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .queue-bar button.play-all {
+    padding: 8px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--accent);
+    background: rgba(108,92,231,0.15);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .toggle-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle-pill.on { border-color: var(--success); color: var(--text); background: rgba(81,207,102,0.12); }
+  .toggle-pill input { display: none; }
+  .queue-hint { font-size: 11px; color: var(--muted); margin: -6px 0 14px; }
+
   .genre-scroll {
     display: flex;
     gap: 8px;
@@ -164,26 +199,11 @@
 
   .empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
 
-  /* --- Inline player: embedded right inside the card, roughly a third of
-     the viewport height, since TikTok/Shorts/Reels are vertical (9:16) --- */
-  .inline-player {
-    display: none;
-    margin-top: 12px;
-    width: 100%;
-    max-width: 220px;
-    aspect-ratio: 9 / 16;
-    border-radius: 10px;
-    overflow: hidden;
-    background: #000;
-  }
-  .inline-player.show { display: block; }
-  .inline-player iframe { width: 100%; height: 100%; border: none; }
-
-  /* --- Mini (draggable floating) player --- */
+  /* --- Mini (draggable floating) player — the ONLY playback surface --- */
   #miniPlayer {
     display: none;
     position: fixed;
-    width: 150px;
+    width: 160px;
     aspect-ratio: 9 / 16;
     right: 16px;
     bottom: 90px;
@@ -193,7 +213,6 @@
     overflow: hidden;
     box-shadow: 0 10px 40px rgba(0,0,0,0.6);
     border: 1px solid var(--border);
-    touch-action: none;
     display: flex;
     flex-direction: column;
   }
@@ -202,19 +221,26 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 5px 6px;
+    padding: 8px 8px;
     background: #171a21;
-    cursor: grab;
     flex-shrink: 0;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
   }
-  #miniPlayer .mp-head:active { cursor: grabbing; }
+  #miniPlayer .mp-head.armed { background: var(--accent); }
+  #miniPlayer .mp-head .mp-hint {
+    font-size: 10px;
+    color: var(--muted);
+  }
+  #miniPlayer .mp-head.armed .mp-hint { color: white; }
   #miniPlayer .mp-head button {
-    width: 20px; height: 20px;
+    width: 22px; height: 22px;
     border-radius: 5px;
     border: none;
     background: #23252e;
     color: var(--text);
-    font-size: 11px;
+    font-size: 12px;
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
   }
@@ -287,11 +313,8 @@
         <input type="text" id="pvTitle" placeholder="e.g. That Tungba drum cover">
 
         <label>Genre</label>
-        <select id="pvGenre">
-          {% for g in genres %}
-          <option value="{{ g }}">{{ g }}</option>
-          {% endfor %}
-        </select>
+        <select id="pvGenre"></select>
+        <input type="text" id="pvGenreCustom" placeholder="Type your own genre..." style="display:none; margin-top:8px;">
 
         <label>Notes (optional)</label>
         <textarea id="pvNotes" rows="2" placeholder="Why you saved it, a timestamp, whatever's useful"></textarea>
@@ -302,16 +325,25 @@
   </div>
 
   <div class="tab-panel" id="tab-library">
+    <div class="queue-bar">
+      <button class="play-all" id="playAllBtn">▶ Play All</button>
+      <label class="toggle-pill" id="shuffleToggle"><input type="checkbox" id="shuffleCheck"> 🔀 Shuffle</label>
+      <label class="toggle-pill" id="autoplayToggle"><input type="checkbox" id="autoplayCheck"> 🔁 Autoplay</label>
+      <label class="toggle-pill" id="subtitlesToggle"><input type="checkbox" id="subtitlesCheck"> 💬 Subtitles</label>
+    </div>
+    <div class="queue-hint">Autoplay is exact for YouTube, approximate (timer-based) for TikTok. Subtitles only work on YouTube.</div>
     <div class="genre-scroll" id="genreScroll"></div>
     <div class="bookmark-list" id="bookmarkList"></div>
   </div>
 </div>
 
-<!-- Draggable mini player -->
+<!-- Draggable mini player — the only place video plays -->
 <div id="miniPlayer">
   <div class="mp-head" id="mpHead">
-    <span style="font-size:10px;color:#9a9ba5;">⠿ drag</span>
+    <span class="mp-hint" id="mpHint">⠿ hold to move</span>
     <div class="mp-btns">
+      <button id="mpPrev" title="Previous">⏮</button>
+      <button id="mpNext" title="Next">⏭</button>
       <button id="mpFullscreen" title="Fullscreen">⤢</button>
       <button id="mpClose" title="Close">✕</button>
     </div>
@@ -323,13 +355,32 @@
 <div id="fullscreenPlayer">
   <div class="fs-body" id="fsBody"></div>
   <div class="fs-controls">
+    <button id="fsPrev">⏮ Prev</button>
+    <button id="fsNext">Next ⏭</button>
     <button id="fsMinimize">Shrink to mini player</button>
     <button id="fsClose">Close</button>
   </div>
 </div>
 
 <script>
-const GENRES = {{ genres | tojson }};
+// --- Genre list: fetched live from the server so custom genres you've
+// typed in before show up as real options/pills, not just accepted once. ---
+let GENRES = [];
+
+async function refreshGenres() {
+  const res = await fetch('/api/genres');
+  GENRES = await res.json();
+  populateGenreSelect();
+  renderGenrePills();
+}
+
+function populateGenreSelect() {
+  const currentValue = pvGenre.value;
+  pvGenre.innerHTML = GENRES.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('')
+    + `<option value="__custom__">+ Add new genre</option>`;
+  // Preserve selection across refreshes where possible
+  if (currentValue && GENRES.includes(currentValue)) pvGenre.value = currentValue;
+}
 
 // --- Tabs ---
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -338,7 +389,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'library') loadBookmarks(currentGenreFilter);
+    if (btn.dataset.tab === 'library') refreshGenres().then(() => loadBookmarks(currentGenreFilter));
   });
 });
 
@@ -352,8 +403,26 @@ const pvPlatform = document.getElementById('pvPlatform');
 const pvOrigTitle = document.getElementById('pvOrigTitle');
 const pvTitle = document.getElementById('pvTitle');
 const pvGenre = document.getElementById('pvGenre');
+const pvGenreCustom = document.getElementById('pvGenreCustom');
 const pvNotes = document.getElementById('pvNotes');
 const confirmSaveBtn = document.getElementById('confirmSaveBtn');
+
+pvGenre.addEventListener('change', () => {
+  if (pvGenre.value === '__custom__') {
+    pvGenreCustom.style.display = 'block';
+    pvGenreCustom.value = '';
+    pvGenreCustom.focus();
+  } else {
+    pvGenreCustom.style.display = 'none';
+  }
+});
+
+function getSelectedGenre() {
+  if (pvGenre.value === '__custom__') {
+    return pvGenreCustom.value.trim();
+  }
+  return pvGenre.value;
+}
 
 let currentPreview = null;
 
@@ -389,6 +458,7 @@ fetchBtn.addEventListener('click', async () => {
     pvOrigTitle.textContent = data.title;
     pvTitle.value = data.title;
     pvGenre.value = data.suggested_genre;
+    pvGenreCustom.style.display = 'none';
     pvNotes.value = '';
     previewBox.classList.add('show');
     saveStatus.textContent = '';
@@ -401,6 +471,14 @@ fetchBtn.addEventListener('click', async () => {
 
 confirmSaveBtn.addEventListener('click', async () => {
   if (!currentPreview) return;
+
+  const genre = getSelectedGenre();
+  if (!genre) {
+    saveStatus.className = 'error';
+    saveStatus.textContent = 'Type a genre name first.';
+    return;
+  }
+
   confirmSaveBtn.disabled = true;
 
   try {
@@ -411,11 +489,12 @@ confirmSaveBtn.addEventListener('click', async () => {
         url: currentPreview.original_url,
         title: pvTitle.value.trim(),
         original_title: currentPreview.title,
-        genre: pvGenre.value,
+        genre: genre,
         notes: pvNotes.value.trim(),
         thumbnail: currentPreview.thumbnail,
         uploader: currentPreview.uploader,
         video_id: currentPreview.video_id,
+        duration: currentPreview.duration,
       })
     });
     const data = await res.json();
@@ -430,6 +509,7 @@ confirmSaveBtn.addEventListener('click', async () => {
     previewBox.classList.remove('show');
     urlInput.value = '';
     currentPreview = null;
+    refreshGenres(); // pick up a newly typed custom genre right away
   } catch (e) {
     saveStatus.className = 'error';
     saveStatus.textContent = 'Network error, try again.';
@@ -439,6 +519,7 @@ confirmSaveBtn.addEventListener('click', async () => {
 
 // --- Library tab ---
 let currentGenreFilter = 'All';
+let libraryItems = [];
 const genreScroll = document.getElementById('genreScroll');
 const bookmarkList = document.getElementById('bookmarkList');
 
@@ -460,6 +541,7 @@ async function loadBookmarks(genre) {
   const q = genre && genre !== 'All' ? `?genre=${encodeURIComponent(genre)}` : '';
   const res = await fetch('/api/bookmarks' + q);
   const items = await res.json();
+  libraryItems = items;
 
   if (!items.length) {
     bookmarkList.innerHTML = '<div class="empty-state">Nothing saved here yet.</div>';
@@ -475,13 +557,12 @@ async function loadBookmarks(genre) {
           <div class="title">${escapeHtml(b.title)}</div>
           <div class="platform-tag">${b.platform}${b.uploader ? ' · ' + escapeHtml(b.uploader) : ''}</div>
           <div class="actions">
-            ${b.embed_url ? `<button class="play-btn" data-embed="${b.embed_url}" data-cardid="${b.id}">▶ Play</button>` : ''}
+            ${b.embed_url ? `<button class="play-btn" data-id="${b.id}">▶ Play</button>` : ''}
             <a class="go-original" href="${b.url}" target="_blank" rel="noopener">Go to original</a>
             <button class="delete-btn" data-id="${b.id}">Delete</button>
           </div>
         </div>
       </div>
-      <div class="inline-player" id="inline-${b.id}"></div>
     </div>
   `).join('');
 
@@ -494,10 +575,17 @@ async function loadBookmarks(genre) {
 
   bookmarkList.querySelectorAll('.play-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      playInline(btn.dataset.cardid, btn.dataset.embed);
+      startQueue(items.filter(b => b.embed_url), btn.dataset.id);
     });
   });
 }
+
+document.getElementById('playAllBtn').addEventListener('click', () => {
+  if (!libraryItems.length) return;
+  const playable = libraryItems.filter(b => b.embed_url);
+  if (!playable.length) return;
+  startQueue(playable, playable[0].id);
+});
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -506,24 +594,94 @@ function escapeHtml(str) {
 }
 
 // ============================================================
-// Player: three states — inline (in the card), mini (draggable
-// floating), fullscreen. Only one video plays at a time; switching
-// states moves the same iframe src rather than creating new players.
+// Player: two view states — mini (draggable floating, default) and
+// fullscreen — driven by a queue. Tapping Play (or Play All) builds
+// a queue from whatever's currently listed in the Library tab and
+// starts playing from that point.
 // ============================================================
 
-let activeEmbedUrl = null;
-let activeCardId = null;
-let currentState = null; // 'inline' | 'mini' | 'fullscreen'
+let playQueue = [];       // array of bookmark objects, in play order
+let queueIndex = -1;      // position within playQueue
+let currentState = null;  // 'mini' | 'fullscreen'
+let ytPlayer = null;      // active YT.Player instance, when current item is YouTube
+let ytApiReady = false;
+let pendingYTCallback = null;
+let tiktokAutoplayTimer = null; // duration-based timer for TikTok auto-advance
+
+// Persisted toggle state
+let shuffleOn = localStorage.getItem('crate_shuffle') === '1';
+let autoplayOn = localStorage.getItem('crate_autoplay') === '1';
+let subtitlesOn = localStorage.getItem('crate_subtitles') === '1';
 
 const miniPlayer = document.getElementById('miniPlayer');
 const mpBody = document.getElementById('mpBody');
+const mpHead = document.getElementById('mpHead');
+const mpHint = document.getElementById('mpHint');
 const fullscreenPlayer = document.getElementById('fullscreenPlayer');
 const fsBody = document.getElementById('fsBody');
 
-function stopAllPlayers() {
+const shuffleCheck = document.getElementById('shuffleCheck');
+const autoplayCheck = document.getElementById('autoplayCheck');
+const subtitlesCheck = document.getElementById('subtitlesCheck');
+const shuffleToggle = document.getElementById('shuffleToggle');
+const autoplayToggle = document.getElementById('autoplayToggle');
+const subtitlesToggle = document.getElementById('subtitlesToggle');
+
+function syncToggleUI() {
+  shuffleCheck.checked = shuffleOn;
+  autoplayCheck.checked = autoplayOn;
+  subtitlesCheck.checked = subtitlesOn;
+  shuffleToggle.classList.toggle('on', shuffleOn);
+  autoplayToggle.classList.toggle('on', autoplayOn);
+  subtitlesToggle.classList.toggle('on', subtitlesOn);
+}
+syncToggleUI();
+
+shuffleCheck.addEventListener('change', () => {
+  shuffleOn = shuffleCheck.checked;
+  localStorage.setItem('crate_shuffle', shuffleOn ? '1' : '0');
+  syncToggleUI();
+});
+autoplayCheck.addEventListener('change', () => {
+  autoplayOn = autoplayCheck.checked;
+  localStorage.setItem('crate_autoplay', autoplayOn ? '1' : '0');
+  syncToggleUI();
+  armTiktokAutoplayTimer(); // re-evaluate for the currently playing item
+});
+subtitlesCheck.addEventListener('change', () => {
+  subtitlesOn = subtitlesCheck.checked;
+  localStorage.setItem('crate_subtitles', subtitlesOn ? '1' : '0');
+  syncToggleUI();
+  // Reload the current item so the caption setting actually takes effect
+  if (queueIndex >= 0) loadQueueItem(queueIndex, currentState);
+});
+
+// --- YouTube IFrame API (only loaded/used for YouTube items) ---
+window.onYouTubeIframeAPIReady = function () {
+  ytApiReady = true;
+  if (pendingYTCallback) { pendingYTCallback(); pendingYTCallback = null; }
+};
+(function loadYouTubeApi() {
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+})();
+
+function clearActivePlayers() {
+  if (ytPlayer) {
+    try { ytPlayer.destroy(); } catch (e) {}
+    ytPlayer = null;
+  }
+  if (tiktokAutoplayTimer) {
+    clearTimeout(tiktokAutoplayTimer);
+    tiktokAutoplayTimer = null;
+  }
   mpBody.innerHTML = '';
   fsBody.innerHTML = '';
-  document.querySelectorAll('.inline-player').forEach(el => { el.innerHTML = ''; el.classList.remove('show'); });
+}
+
+function stopAllPlayers() {
+  clearActivePlayers();
   miniPlayer.classList.remove('show');
   fullscreenPlayer.classList.remove('show');
 }
@@ -536,93 +694,207 @@ function makeIframe(embedUrl) {
   return iframe;
 }
 
-function playInline(cardId, embedUrl) {
-  stopAllPlayers();
-  activeEmbedUrl = embedUrl;
-  activeCardId = cardId;
-  currentState = 'inline';
-
-  const slot = document.getElementById('inline-' + cardId);
-  slot.innerHTML = '';
-  slot.appendChild(makeIframe(embedUrl));
-  slot.classList.add('show');
-
-  // Small control row under the inline player to jump to mini/fullscreen
-  const controls = document.createElement('div');
-  controls.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
-  controls.innerHTML = `
-    <button class="to-mini" style="font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid #2a2d38;background:#0f1115;color:#9a9ba5;cursor:pointer;">Shrink to mini</button>
-    <button class="to-fullscreen" style="font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid #2a2d38;background:#0f1115;color:#9a9ba5;cursor:pointer;">Fullscreen</button>
-  `;
-  slot.parentElement.appendChild(controls);
-  controls.querySelector('.to-mini').addEventListener('click', goMini);
-  controls.querySelector('.to-fullscreen').addEventListener('click', goFullscreen);
-  slot.parentElement._controlsEl = controls;
+// Default, safe corner position — used whenever a fresh video is opened,
+// so a previous bad drag position can never persist and strand the widget.
+function resetMiniPosition() {
+  miniPlayer.style.left = 'auto';
+  miniPlayer.style.top = 'auto';
+  miniPlayer.style.right = '16px';
+  miniPlayer.style.bottom = '90px';
 }
 
-function clearInlineFor(cardId) {
-  if (!cardId) return;
-  const slot = document.getElementById('inline-' + cardId);
-  if (!slot) return;
-  slot.innerHTML = '';
-  slot.classList.remove('show');
-  if (slot.parentElement._controlsEl) {
-    slot.parentElement._controlsEl.remove();
-    slot.parentElement._controlsEl = null;
+// Warm up the connection to whatever platform the NEXT item needs, so
+// hitting Next feels snappier. This is the extent of "preloading" that's
+// realistic for embeds we don't control — we can't pre-fetch the actual
+// video content itself.
+function preconnectNext() {
+  document.querySelectorAll('link[data-crate-preconnect]').forEach(el => el.remove());
+  if (playQueue.length < 2) return;
+  const nextItem = playQueue[(queueIndex + 1) % playQueue.length];
+  const host = nextItem.platform === 'YouTube' ? 'https://www.youtube.com' : 'https://www.tiktok.com';
+  const link = document.createElement('link');
+  link.rel = 'preconnect';
+  link.href = host;
+  link.dataset.crateConnect = '1';
+  document.head.appendChild(link);
+}
+
+function armTiktokAutoplayTimer() {
+  if (tiktokAutoplayTimer) { clearTimeout(tiktokAutoplayTimer); tiktokAutoplayTimer = null; }
+  if (!autoplayOn || queueIndex < 0) return;
+  const item = playQueue[queueIndex];
+  if (!item || item.platform === 'YouTube' || !item.duration) return;
+  // +1.5s buffer for the embed's own load/buffering time before playback
+  // actually starts — this is an approximation based on TikTok's own
+  // reported duration, not a guess; still, actual playback timing can
+  // drift slightly since we don't control TikTok's player directly.
+  const ms = (item.duration + 1.5) * 1000;
+  const targetIndex = queueIndex;
+  tiktokAutoplayTimer = setTimeout(() => {
+    if (queueIndex === targetIndex) goNext();
+  }, ms);
+}
+
+function onYTStateChange(event) {
+  if (event.data === YT.PlayerState.ENDED && autoplayOn) {
+    goNext();
   }
 }
 
-function goMini() {
-  if (!activeEmbedUrl) return;
-  clearInlineFor(activeCardId);
-  fsBody.innerHTML = '';
-  fullscreenPlayer.classList.remove('show');
+function loadQueueItem(index, targetView) {
+  if (index < 0 || index >= playQueue.length) return;
+  clearActivePlayers();
 
-  mpBody.innerHTML = '';
-  mpBody.appendChild(makeIframe(activeEmbedUrl));
-  miniPlayer.classList.add('show');
-  currentState = 'mini';
+  queueIndex = index;
+  const item = playQueue[index];
+  const view = targetView || currentState || 'mini';
+  const container = view === 'fullscreen' ? fsBody : mpBody;
+
+  if (view === 'mini') {
+    resetMiniPosition();
+    miniPlayer.classList.add('show');
+    fullscreenPlayer.classList.remove('show');
+  } else {
+    fullscreenPlayer.classList.add('show');
+    miniPlayer.classList.remove('show');
+  }
+  currentState = view;
+
+  if (item.platform === 'YouTube' && item.video_id) {
+    const buildPlayer = () => {
+      const playerDiv = document.createElement('div');
+      container.appendChild(playerDiv);
+      ytPlayer = new YT.Player(playerDiv, {
+        videoId: item.video_id,
+        playerVars: {
+          autoplay: 1,
+          playsinline: 1,
+          cc_load_policy: subtitlesOn ? 1 : 0,
+          cc_lang_pref: 'en',
+        },
+        events: { onStateChange: onYTStateChange },
+      });
+    };
+    if (ytApiReady) buildPlayer(); else pendingYTCallback = buildPlayer;
+  } else {
+    // TikTok (and anything else without a JS player API) — plain iframe.
+    container.appendChild(makeIframe(item.embed_url));
+    armTiktokAutoplayTimer();
+  }
+
+  preconnectNext();
+}
+
+function startQueue(items, startId) {
+  if (!items.length) return;
+  playQueue = items;
+  const idx = Math.max(0, items.findIndex(b => b.id === startId));
+  loadQueueItem(idx, 'mini');
+}
+
+function goNext() {
+  if (!playQueue.length) return;
+  let next;
+  if (shuffleOn && playQueue.length > 1) {
+    do { next = Math.floor(Math.random() * playQueue.length); } while (next === queueIndex);
+  } else {
+    next = (queueIndex + 1) % playQueue.length;
+  }
+  loadQueueItem(next, currentState);
+}
+
+function goPrev() {
+  if (!playQueue.length) return;
+  const prev = (queueIndex - 1 + playQueue.length) % playQueue.length;
+  loadQueueItem(prev, currentState);
 }
 
 function goFullscreen() {
-  if (!activeEmbedUrl) return;
-  clearInlineFor(activeCardId);
-  mpBody.innerHTML = '';
-  miniPlayer.classList.remove('show');
-
-  fsBody.innerHTML = '';
-  fsBody.appendChild(makeIframe(activeEmbedUrl));
-  fullscreenPlayer.classList.add('show');
-  currentState = 'fullscreen';
+  if (queueIndex < 0) return;
+  loadQueueItem(queueIndex, 'fullscreen');
 }
 
+function goMini() {
+  if (queueIndex < 0) return;
+  loadQueueItem(queueIndex, 'mini');
+}
+
+document.getElementById('mpNext').addEventListener('click', goNext);
+document.getElementById('mpPrev').addEventListener('click', goPrev);
+document.getElementById('fsNext').addEventListener('click', goNext);
+document.getElementById('fsPrev').addEventListener('click', goPrev);
 document.getElementById('mpFullscreen').addEventListener('click', goFullscreen);
 document.getElementById('mpClose').addEventListener('click', () => {
   stopAllPlayers();
-  activeEmbedUrl = null;
+  playQueue = [];
+  queueIndex = -1;
   currentState = null;
 });
 document.getElementById('fsClose').addEventListener('click', () => {
   stopAllPlayers();
-  activeEmbedUrl = null;
+  playQueue = [];
+  queueIndex = -1;
   currentState = null;
 });
 document.getElementById('fsMinimize').addEventListener('click', goMini);
 
-// --- Dragging for the mini player (mouse + touch via Pointer Events) ---
-const mpHead = document.getElementById('mpHead');
-let dragging = false, dragOffsetX = 0, dragOffsetY = 0;
+// --- Long-press-to-drag for the mini player ---
+// A quick tap on the header does nothing (avoids accidental nudges); the
+// player only starts following your finger/cursor after a ~350ms hold,
+// signaled by the header lighting up and the hint text changing.
+const LONG_PRESS_MS = 350;
+const MOVE_CANCEL_THRESHOLD = 8;
+
+let pressTimer = null;
+let armed = false;
+let dragOffsetX = 0, dragOffsetY = 0;
+let startX = 0, startY = 0;
+
+function clampToViewport() {
+  const rect = miniPlayer.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width;
+  const maxY = window.innerHeight - rect.height;
+  let x = Math.min(Math.max(rect.left, 0), Math.max(maxX, 0));
+  let y = Math.min(Math.max(rect.top, 0), Math.max(maxY, 0));
+  miniPlayer.style.left = x + 'px';
+  miniPlayer.style.top = y + 'px';
+  miniPlayer.style.right = 'auto';
+  miniPlayer.style.bottom = 'auto';
+}
+
+// If the viewport changes (mobile browser chrome showing/hiding, rotation),
+// re-clamp so the widget can never end up stranded off-screen.
+window.addEventListener('resize', () => {
+  if (miniPlayer.classList.contains('show')) clampToViewport();
+});
 
 mpHead.addEventListener('pointerdown', (e) => {
-  dragging = true;
+  armed = false;
+  startX = e.clientX;
+  startY = e.clientY;
   const rect = miniPlayer.getBoundingClientRect();
   dragOffsetX = e.clientX - rect.left;
   dragOffsetY = e.clientY - rect.top;
   mpHead.setPointerCapture(e.pointerId);
+
+  pressTimer = setTimeout(() => {
+    armed = true;
+    mpHead.classList.add('armed');
+    mpHint.textContent = '⠿ moving...';
+  }, LONG_PRESS_MS);
 });
 
 mpHead.addEventListener('pointermove', (e) => {
-  if (!dragging) return;
+  if (!armed) {
+    // Cancel the long-press if the finger moves too much before it fires —
+    // avoids accidentally arming drag on a slightly shaky tap.
+    const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
+    if (dist > MOVE_CANCEL_THRESHOLD && pressTimer) {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+    return;
+  }
   let x = e.clientX - dragOffsetX;
   let y = e.clientY - dragOffsetY;
   const maxX = window.innerWidth - miniPlayer.offsetWidth;
@@ -635,10 +907,17 @@ mpHead.addEventListener('pointermove', (e) => {
   miniPlayer.style.bottom = 'auto';
 });
 
-mpHead.addEventListener('pointerup', () => { dragging = false; });
-mpHead.addEventListener('pointercancel', () => { dragging = false; });
+function endPress() {
+  if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+  armed = false;
+  mpHead.classList.remove('armed');
+  mpHint.textContent = '⠿ hold to move';
+}
 
-renderGenrePills();
+mpHead.addEventListener('pointerup', endPress);
+mpHead.addEventListener('pointercancel', endPress);
+
+refreshGenres();
 </script>
 </body>
 </html>
